@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import androidx.compose.ui.graphics.Color
+import com.intellij.java.library.JavaLibraryUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.UiDataProvider
@@ -92,8 +93,11 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
     }
 }
 
-fun compileCode(fileToCompile: VirtualFile, project: Project) {
-    val module = ModuleUtilCore.findModuleForFile(fileToCompile, project) ?: return
+suspend fun compileCode(fileToCompile: VirtualFile, project: Project) {
+    val module = readAction {
+        val m = ModuleUtilCore.findModuleForFile(fileToCompile, project)
+        m.takeIf { JavaLibraryUtil.hasLibraryClass(m, "androidx.compose.runtime.Composable") }
+    } ?: return
 
     application.invokeLater {
         if (project.isDisposed) return@invokeLater
