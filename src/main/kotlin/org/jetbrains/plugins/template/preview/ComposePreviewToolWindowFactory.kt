@@ -34,7 +34,6 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.task.ProjectTaskManager
 import com.intellij.ui.content.ContentFactory
-import com.intellij.util.application
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +47,7 @@ import org.jetbrains.jewel.ui.component.Text
 import java.awt.BorderLayout
 import java.awt.Component
 import javax.swing.JPanel
+import kotlin.coroutines.resume
 
 @ExperimentalJewelApi
 class ComposePreviewToolWindowFactory : ToolWindowFactory {
@@ -93,29 +93,32 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
     }
 }
 
-suspend fun compileCode(fileToCompile: VirtualFile, project: Project) {
+private suspend fun compileCode(fileToCompile: VirtualFile, project: Project) {
     val module = readAction {
         val m = ModuleUtilCore.findModuleForFile(fileToCompile, project)
         m.takeIf { JavaLibraryUtil.hasLibraryClass(m, "androidx.compose.runtime.Composable") }
     } ?: return
 
-    application.invokeLater {
-        if (project.isDisposed) return@invokeLater
-        if (module.isDisposed) return@invokeLater
-        if (!fileToCompile.isValid) return@invokeLater
+    withContext(Dispatchers.EDT) {
+        if (module.isDisposed) return@withContext
+        if (!fileToCompile.isValid) return@withContext
 
+        compileFiles(fileToCompile, project)
+
+        val allPaths = readAction {
+            ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
+            OrderEnumerator.orderEntries(module)
+                .recursively().withoutSdk().pathsList.pathList
+        }
+
+        println(allPaths)
+    }
+}
+
+private suspend fun compileFiles(fileToCompile: VirtualFile, project: Project) {
+    suspendCancellableCoroutine { continuation ->
         ProjectTaskManager.getInstance(project).compile(fileToCompile).onSuccess {
-            project.service<MyCoroutineScopeHolder>().coroutineScope.launch {
-                println("Compiled successfully")
-
-                val allPaths = readAction {
-                    ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
-                    OrderEnumerator.orderEntries(module)
-                        .recursively().withoutSdk().pathsList.pathList
-                }
-
-                println(allPaths)
-            }
+            continuation.resume(fileToCompile)
         }
     }
 }
