@@ -46,6 +46,9 @@ dependencies {
     // Workaround for running tests on Windows and Linux
     // It provides necessary Skiko runtime native binaries
     testImplementation(libs.skikoAwtRuntimeAll)
+    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.20") {
+        isTransitive = false
+    }
 
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
