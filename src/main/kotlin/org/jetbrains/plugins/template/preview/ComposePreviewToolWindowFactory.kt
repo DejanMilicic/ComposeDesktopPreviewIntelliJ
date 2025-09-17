@@ -5,10 +5,7 @@ package org.jetbrains.plugins.template.preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import androidx.compose.ui.graphics.Color
@@ -39,6 +36,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.time.debounce
 import org.jetbrains.jewel.bridge.LocalComponent
 import org.jetbrains.jewel.bridge.actionSystem.RootDataProviderModifier
 import org.jetbrains.jewel.bridge.theme.SwingBridgeTheme
@@ -50,6 +48,7 @@ import java.awt.Component
 import java.lang.reflect.Method
 import java.net.URLClassLoader
 import java.nio.file.Files
+import java.time.Duration
 import javax.swing.JPanel
 import kotlin.coroutines.resume
 import kotlin.io.path.Path
@@ -83,12 +82,22 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
 
         val coroutineScope = project.service<MyCoroutineScopeHolder>().coroutineScope
         coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            watcher.observeEditorContentChanges(toolWindow.disposable).collect { (_, virtualFile) ->
+            watcher.observeEditorContentChanges(toolWindow.disposable)
+                .debounce(Duration.ofSeconds(5))
+                .collect { (_, virtualFile) ->
                 try {
                     val compiledFun = compileCode(virtualFile, project) ?: return@collect
 
                     withContext(Dispatchers.EDT) {
-                        JvmReflectBridge.setPreviewContent(composePanel, compiledFun)
+                        composePanel.setContent {
+                            SwingBridgeTheme {
+                                CompositionLocalProvider {
+                                    ComponentDataProviderBridge(wrapperPanel, content = {
+                                        compiledFun.invoke(null, currentComposer, currentCompositeKeyHash)
+                                    })
+                                }
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     thisLogger().error(e)
