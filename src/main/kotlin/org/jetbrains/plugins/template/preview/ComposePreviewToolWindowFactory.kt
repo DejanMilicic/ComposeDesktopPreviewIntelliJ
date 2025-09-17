@@ -165,34 +165,32 @@ class JewelComposePanelWrapper : JPanel(), UiDataProvider {
 }
 
 object ComposableModificationWatcher {
-    private val editorFactory = EditorFactory.getInstance()
-
     fun observeEditorContentChanges(disposable: Disposable): Flow<Pair<String, VirtualFile>> {
         return callbackFlow {
             val listener = object : DocumentListener {
                 override fun documentChanged(event: DocumentEvent) {
                     val document = event.document
-                    val vf = FileDocumentManager.getInstance().getFile(document)
+                    val vf = FileDocumentManager.getInstance().getFile(document) ?: return
 
                     trySend(document.text to vf!!)
                 }
             }
 
-            editorFactory.eventMulticaster.addDocumentListener(listener, disposable)
+            EditorFactory.getInstance().eventMulticaster.addDocumentListener(listener, disposable)
+
             val editorOpenListener = object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
                     super.editorCreated(event)
 
                     val document = event.editor.document
-                    val vf = FileDocumentManager.getInstance().getFile(document)
-                    trySend(document.text to vf!!)
+                    val vf = FileDocumentManager.getInstance().getFile(document) ?: return
+                    trySend(document.text to vf)
                 }
             }
 
-            editorFactory.addEditorFactoryListener(editorOpenListener, disposable)
-
+            EditorFactory.getInstance().addEditorFactoryListener(editorOpenListener, disposable)
             awaitClose {
-                editorFactory.eventMulticaster.removeDocumentListener(listener)
+                EditorFactory.getInstance().eventMulticaster.removeDocumentListener(listener)
             }
         }
     }
