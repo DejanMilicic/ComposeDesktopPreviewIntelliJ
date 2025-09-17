@@ -1,4 +1,4 @@
-@file:OptIn(FlowPreview::class)
+@file:OptIn(FlowPreview::class, ExperimentalJewelApi::class, InternalJewelApi::class)
 
 package org.jetbrains.plugins.template.preview
 
@@ -39,6 +39,7 @@ import org.jetbrains.jewel.bridge.LocalComponent
 import org.jetbrains.jewel.bridge.actionSystem.RootDataProviderModifier
 import org.jetbrains.jewel.bridge.theme.SwingBridgeTheme
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
+import org.jetbrains.jewel.foundation.InternalJewelApi
 import org.jetbrains.jewel.ui.component.Text
 import java.awt.BorderLayout
 import java.awt.Component
