@@ -5,7 +5,6 @@ package org.jetbrains.plugins.template.preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -17,9 +16,7 @@ import androidx.compose.ui.graphics.Color
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.UiDataProvider
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
-import com.intellij.openapi.compiler.CompilerManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -29,19 +26,17 @@ import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.CompilerModuleExtension
+import com.intellij.openapi.roots.OrderEnumerator
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.task.ProjectTaskManager
 import com.intellij.ui.content.ContentFactory
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
+import com.intellij.util.application
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.jetbrains.jewel.bridge.LocalComponent
 import org.jetbrains.jewel.bridge.actionSystem.RootDataProviderModifier
 import org.jetbrains.jewel.bridge.theme.SwingBridgeTheme
@@ -85,7 +80,7 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
 
                 withContext(Dispatchers.EDT) {
                     composePanel.setContent(wrapperPanel) {
-                        Column(Modifier.fillMaxSize(1.0f)) {
+                        Column() {
                             Text(text, Modifier.wrapContentSize())
                         }
                     }
@@ -97,14 +92,17 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
 
 fun compileCode(fileToCompile: VirtualFile, project: Project) {
     val module = ModuleUtilCore.findModuleForFile(fileToCompile, project) ?: return
-//    CompilerModuleExtension.getInstance(module).compilerOutputPath ?: return
 
-    ApplicationManager.getApplication().invokeLater {
-        CompilerManager.getInstance(project).make(module) { aborted, errors, warnings, context ->
-            println(warnings)
-            println(errors)
-            println(aborted)
-            println(context)
+    application.invokeLater {
+        if (module.isDisposed) return@invokeLater
+        if (!fileToCompile.isValid) return@invokeLater
+
+        ProjectTaskManager.getInstance(project).compile(fileToCompile).onSuccess {
+            val module = ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
+            val allPaths = OrderEnumerator.orderEntries(module)
+                .recursively().withoutSdk().pathsList.pathList
+
+            println(allPaths)
         }
     }
 }
@@ -184,6 +182,7 @@ object ComposableModificationWatcher {
             val editorOpenListener = object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
                     super.editorCreated(event)
+
                     val document = event.editor.document
                     val vf = FileDocumentManager.getInstance().getFile(document)
                     trySend(document.text to vf!!)
