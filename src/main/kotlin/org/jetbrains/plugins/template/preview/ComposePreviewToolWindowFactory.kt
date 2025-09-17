@@ -34,6 +34,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.awaitClose
@@ -78,7 +79,7 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
         val toolWindowContent = contentFactory.createContent(wrapperPanel, "", false)
         toolWindow.contentManager.addContent(toolWindowContent)
 
-        service<ApplicationCoroutineScopeHolder>().coroutineScope.launch {
+        service<ApplicationCoroutineScopeHolder>().coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             watcher.observeEditorContentChanges(toolWindow.disposable).collect { (text, virtualFile) ->
                 compileCode(virtualFile, project)
 
