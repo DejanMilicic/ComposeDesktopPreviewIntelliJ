@@ -5,7 +5,6 @@ package org.jetbrains.plugins.template.preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -13,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import androidx.compose.ui.graphics.Color
+import com.intellij.ide.plugins.PluginManager
 import com.intellij.java.library.JavaLibraryUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataSink
@@ -20,6 +20,7 @@ import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
@@ -46,8 +47,12 @@ import org.jetbrains.jewel.foundation.InternalJewelApi
 import org.jetbrains.jewel.ui.component.Text
 import java.awt.BorderLayout
 import java.awt.Component
+import java.lang.reflect.Method
+import java.net.URLClassLoader
+import java.nio.file.Files
 import javax.swing.JPanel
 import kotlin.coroutines.resume
+import kotlin.io.path.Path
 
 @ExperimentalJewelApi
 class ComposePreviewToolWindowFactory : ToolWindowFactory {
@@ -78,30 +83,30 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
 
         val coroutineScope = project.service<MyCoroutineScopeHolder>().coroutineScope
         coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            watcher.observeEditorContentChanges(toolWindow.disposable).collect { (text, virtualFile) ->
-                compileCode(virtualFile, project)
+            watcher.observeEditorContentChanges(toolWindow.disposable).collect { (_, virtualFile) ->
+                try {
+                    val compiledFun = compileCode(virtualFile, project) ?: return@collect
 
-                withContext(Dispatchers.EDT) {
-                    composePanel.setContent(wrapperPanel) {
-                        Column() {
-                            Text(text, Modifier.wrapContentSize())
-                        }
+                    withContext(Dispatchers.EDT) {
+                        JvmReflectBridge.setPreviewContent(composePanel, compiledFun)
                     }
+                } catch (e: Exception) {
+                    thisLogger().error(e)
                 }
             }
         }
     }
 }
 
-private suspend fun compileCode(fileToCompile: VirtualFile, project: Project) {
+private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): Method? {
     val module = readAction {
         val m = ModuleUtilCore.findModuleForFile(fileToCompile, project)
         m.takeIf { JavaLibraryUtil.hasLibraryClass(m, "androidx.compose.runtime.Composable") }
-    } ?: return
+    } ?: return null
 
-    withContext(Dispatchers.EDT) {
-        if (module.isDisposed) return@withContext
-        if (!fileToCompile.isValid) return@withContext
+    return withContext(Dispatchers.EDT) {
+        if (module.isDisposed) return@withContext null
+        if (!fileToCompile.isValid) return@withContext null
 
         compileFiles(fileToCompile, project)
 
@@ -111,7 +116,20 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project) {
                 .recursively().withoutSdk().pathsList.pathList
         }
 
-        println(allPaths)
+        val diskPaths = allPaths
+            .mapNotNull { p -> Path(p).takeIf { Files.exists(it) }?.toUri()?.toURL() }
+            .toTypedArray()
+
+        // todo dispose previously created loaders on refresh
+        val pluginByClass = PluginManager.getPluginByClass(ComposePreviewToolWindowFactory::class.java)
+        val parent = pluginByClass!!.classLoader
+        val loader = URLClassLoader("ComposePreview", diskPaths, parent)
+        val javaClass = loader.loadClass("org.jetbrains.plugins.template.ui.ChatAppSampleKt")
+        val function = javaClass.methods
+            .firstOrNull { it.name == "ChatAppSample" && it.parameterCount == 2 }
+            ?: return@withContext null
+
+        function
     }
 }
 
