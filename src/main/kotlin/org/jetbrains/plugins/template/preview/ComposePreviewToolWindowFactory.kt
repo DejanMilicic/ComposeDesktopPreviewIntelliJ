@@ -17,14 +17,20 @@ import androidx.compose.ui.graphics.Color
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.UiDataProvider
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.compiler.CompilerManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.event.EditorFactoryEvent
 import com.intellij.openapi.editor.event.EditorFactoryListener
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.CompilerModuleExtension
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
@@ -73,7 +79,9 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
         toolWindow.contentManager.addContent(toolWindowContent)
 
         service<ApplicationCoroutineScopeHolder>().coroutineScope.launch {
-            watcher.observeEditorContentChanges(toolWindow.disposable).collect { text ->
+            watcher.observeEditorContentChanges(toolWindow.disposable).collect { (text, virtualFile) ->
+                compileCode(virtualFile, project)
+
                 withContext(Dispatchers.EDT) {
                     composePanel.setContent(wrapperPanel) {
                         Column(Modifier.fillMaxSize(1.0f)) {
@@ -82,6 +90,20 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
                     }
                 }
             }
+        }
+    }
+}
+
+fun compileCode(fileToCompile: VirtualFile, project: Project) {
+    val module = ModuleUtilCore.findModuleForFile(fileToCompile, project) ?: return
+//    CompilerModuleExtension.getInstance(module).compilerOutputPath ?: return
+
+    ApplicationManager.getApplication().invokeLater {
+        CompilerManager.getInstance(project).make(module) { aborted, errors, warnings, context ->
+            println(warnings)
+            println(errors)
+            println(aborted)
+            println(context)
         }
     }
 }
@@ -146,14 +168,14 @@ class JewelComposePanelWrapper : JPanel(), UiDataProvider {
 object ComposableModificationWatcher {
     private val editorFactory = EditorFactory.getInstance()
 
-    fun observeEditorContentChanges(disposable: Disposable): Flow<String> {
+    fun observeEditorContentChanges(disposable: Disposable): Flow<Pair<String, VirtualFile>> {
         return callbackFlow {
             val listener = object : DocumentListener {
                 override fun documentChanged(event: DocumentEvent) {
                     val document = event.document
+                    val vf = FileDocumentManager.getInstance().getFile(document)
 
-                    // Get the full text content of the document
-                    document.text?.let { trySend(it) }
+                    trySend(document.text to vf!!)
                 }
             }
 
@@ -161,7 +183,9 @@ object ComposableModificationWatcher {
             val editorOpenListener = object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
                     super.editorCreated(event)
-                    event.editor.document.text.let { trySend(it) }
+                    val document = event.editor.document
+                    val vf = FileDocumentManager.getInstance().getFile(document)
+                    trySend(document.text to vf!!)
                 }
             }
 
