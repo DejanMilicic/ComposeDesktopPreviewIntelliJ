@@ -17,6 +17,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -74,7 +75,8 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
         val toolWindowContent = contentFactory.createContent(wrapperPanel, "", false)
         toolWindow.contentManager.addContent(toolWindowContent)
 
-        service<ApplicationCoroutineScopeHolder>().coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val coroutineScope = project.service<MyCoroutineScopeHolder>().coroutineScope
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             watcher.observeEditorContentChanges(toolWindow.disposable).collect { (text, virtualFile) ->
                 compileCode(virtualFile, project)
 
@@ -94,15 +96,22 @@ fun compileCode(fileToCompile: VirtualFile, project: Project) {
     val module = ModuleUtilCore.findModuleForFile(fileToCompile, project) ?: return
 
     application.invokeLater {
+        if (project.isDisposed) return@invokeLater
         if (module.isDisposed) return@invokeLater
         if (!fileToCompile.isValid) return@invokeLater
 
         ProjectTaskManager.getInstance(project).compile(fileToCompile).onSuccess {
-            val module = ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
-            val allPaths = OrderEnumerator.orderEntries(module)
-                .recursively().withoutSdk().pathsList.pathList
+            project.service<MyCoroutineScopeHolder>().coroutineScope.launch {
+                println("Compiled successfully")
 
-            println(allPaths)
+                val allPaths = readAction {
+                    ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
+                    OrderEnumerator.orderEntries(module)
+                        .recursively().withoutSdk().pathsList.pathList
+                }
+
+                println(allPaths)
+            }
         }
     }
 }
