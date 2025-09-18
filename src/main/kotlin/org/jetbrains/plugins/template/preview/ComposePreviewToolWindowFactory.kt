@@ -75,6 +75,7 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
             }
         }
 
+        wrapperPanel.setLayout(BorderLayout())
         wrapperPanel.add(composePanel, BorderLayout.CENTER)
 
         val toolWindowContent = contentFactory.createContent(wrapperPanel, "", false)
