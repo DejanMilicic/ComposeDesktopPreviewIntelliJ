@@ -149,3 +149,4 @@ tasks {
 
 // do not run Plugin Verifier in the template itself
 tasks.getByName("verifyPlugin").enabled = false
+tasks.getByName("buildSearchableOptions").enabled = false
