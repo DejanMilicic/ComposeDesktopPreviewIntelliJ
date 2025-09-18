@@ -141,12 +141,10 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
         val pluginByClass = PluginManager.getPluginByClass(ComposePreviewToolWindowFactory::class.java)
         val parent = pluginByClass!!.classLoader
         val loader = URLClassLoader("ComposePreview", diskPaths, parent)
-        val javaClass = loader.loadClass("org.jetbrains.plugins.template.ui.ChatAppSampleKt")
-        val function = javaClass.methods
-            .firstOrNull { it.name == "ChatAppSample" && it.parameterCount == 2 }
-            ?: return@withContext null
+        val functions = ComposableFunctionFinder(loader)
+            .findPreviewFunctions(listOf("org.jetbrains.plugins.template.ui.ChatAppSampleKt"))
 
-        function
+        functions.firstOrNull()?.method ?: return@withContext null
     }
 }
 
@@ -232,7 +230,7 @@ object ComposableModificationWatcher {
                     val document = event.document
                     val vf = FileDocumentManager.getInstance().getFile(document) ?: return
 
-                    trySend(document.text to vf!!)
+                    trySend(document.text to vf)
                 }
             }
 
