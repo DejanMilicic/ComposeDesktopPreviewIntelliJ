@@ -30,6 +30,9 @@ import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.OrderEnumerator
+import com.intellij.openapi.ui.getUserData
+import com.intellij.openapi.ui.putUserData
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -92,14 +95,23 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
                 .distinctUntilChanged()
                 .collect { (_, virtualFile) ->
                     try {
-                        val compiledFun = compileCode(virtualFile, project) ?: return@collect
+                        val provider = compileCode(virtualFile, project) ?: return@collect
 
                         withContext(Dispatchers.EDT) {
+                            // free up the previous content JVM classes, register new
+                            try {
+                                composePanel.getUserData(PROVIDER_KEY)?.classLoader?.close()
+                            } catch (e: Exception) {
+                                thisLogger().error("Unable to release classloader for UI preview", e)
+                            }
+
+                            composePanel.putUserData(PROVIDER_KEY, provider)
+
                             composePanel.setContent {
                                 SwingBridgeTheme {
                                     CompositionLocalProvider {
                                         ComponentDataProviderBridge(wrapperPanel, content = {
-                                            compiledFun.invoke(null, currentComposer, currentCompositeKeyHash)
+                                            provider.function.invoke(null, currentComposer, currentCompositeKeyHash)
                                         })
                                     }
                                 }
@@ -115,7 +127,11 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
 
 private data class ModulePaths(val module: Module, val paths: List<String>)
 
-private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): Method? {
+private data class ContentProvider(val function: Method, val classLoader: URLClassLoader)
+
+private val PROVIDER_KEY = Key.create<ContentProvider>("ComposePreviewToolWindowFactory.ContentProvider")
+
+private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): ContentProvider? {
     val moduleData = readAction {
         val m = ModuleUtilCore.findModuleForFile(fileToCompile, project)
         m.takeIf { JavaLibraryUtil.hasLibraryClass(m, "androidx.compose.runtime.Composable") }
@@ -144,7 +160,9 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
         val functions = ComposableFunctionFinder(loader)
             .findPreviewFunctions(listOf("org.jetbrains.plugins.template.ui.ChatAppSampleKt"))
 
-        functions.firstOrNull()?.method ?: return@withContext null
+        functions.firstOrNull()?.method
+            ?.let { ContentProvider(it, loader) }
+            ?: return@withContext null
     }
 }
 
