@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import androidx.compose.ui.graphics.Color
+import com.intellij.debugger.ui.HotSwapUIImpl
 import com.intellij.ide.plugins.PluginManager
 import com.intellij.java.library.JavaLibraryUtil
 import com.intellij.openapi.Disposable
@@ -31,7 +32,9 @@ import com.intellij.openapi.roots.OrderEnumerator
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.task.ProjectTaskContext
 import com.intellij.task.ProjectTaskManager
+import com.intellij.task.impl.ProjectTaskManagerImpl
 import com.intellij.ui.content.ContentFactory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
@@ -147,7 +150,11 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
 
 private suspend fun compileFiles(fileToCompile: VirtualFile, project: Project) {
     suspendCancellableCoroutine { continuation ->
-        ProjectTaskManager.getInstance(project).compile(fileToCompile).onSuccess {
+        val taskManager = ProjectTaskManager.getInstance(project) as ProjectTaskManagerImpl
+        val task = taskManager.createModulesFilesTask(arrayOf(fileToCompile.parent))
+        val context = ProjectTaskContext(true).withUserData(HotSwapUIImpl.SKIP_HOT_SWAP_KEY, true)
+
+        taskManager.run(context, task).onSuccess {
             continuation.resume(fileToCompile)
         }
     }
