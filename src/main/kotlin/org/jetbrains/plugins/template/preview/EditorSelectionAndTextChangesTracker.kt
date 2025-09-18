@@ -40,9 +40,7 @@ object EditorSelectionAndTextChangesTracker {
                 // Create and add document listener
                 documentListener = object : DocumentListener {
                     override fun documentChanged(event: DocumentEvent) {
-                        val text = event.document.text
-                        println("DocumentChanged: $text")
-                        trySend( file)
+                        trySend(file)
                     }
                 }
                 currentEditor!!.document.addDocumentListener(documentListener!!)
@@ -52,9 +50,7 @@ object EditorSelectionAndTextChangesTracker {
             val fileEditorManagerListener = object : FileEditorManagerListener {
                 override fun selectionChanged(event: FileEditorManagerEvent) {
                     val newFile = event.newFile
-                    val newEditor = (event.newEditor as? TextEditor)?.editor
-
-                    println("Editor Changed: ${newEditor!!.document.text}")
+                    val newEditor = (event.newEditor as? TextEditor)?.editor ?: return
 
                     if (newFile != null) {
                         trySend(newFile)
@@ -76,7 +72,6 @@ object EditorSelectionAndTextChangesTracker {
             val selectedFile = fileEditorManager.selectedFiles.firstOrNull()
 
             if (selectedEditor != null && selectedFile != null) {
-                println("Initial selection: ${selectedEditor.editor.document.text}")
 
                 trySend(selectedFile)
                 addListenersToCurrentEditor(selectedEditor.editor, selectedFile)
