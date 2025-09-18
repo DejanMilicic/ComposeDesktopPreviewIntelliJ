@@ -18,6 +18,7 @@ import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -129,7 +130,8 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
         if (moduleData.module.isDisposed) return@withContext null
         if (!fileToCompile.isValid) return@withContext null
 
-        compileFiles(fileToCompile, project)
+        val files = compileFiles(fileToCompile, project)
+        if (files.isEmpty()) return@withContext null
 
         val diskPaths = moduleData.paths
             .mapNotNull { p -> Path(p).takeIf { Files.exists(it) }?.toUri()?.toURL() }
@@ -148,14 +150,19 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
     }
 }
 
-private suspend fun compileFiles(fileToCompile: VirtualFile, project: Project) {
-    suspendCancellableCoroutine { continuation ->
-        val taskManager = ProjectTaskManager.getInstance(project) as ProjectTaskManagerImpl
-        val task = taskManager.createModulesFilesTask(arrayOf(fileToCompile.parent))
-        val context = ProjectTaskContext(true).withUserData(HotSwapUIImpl.SKIP_HOT_SWAP_KEY, true)
+private suspend fun compileFiles(fileToCompile: VirtualFile, project: Project): List<VirtualFile> {
+    val taskManager = ProjectTaskManager.getInstance(project) as ProjectTaskManagerImpl
+    val task = readAction { taskManager.createModulesFilesTask(arrayOf(fileToCompile.parent)) }
 
-        taskManager.run(context, task).onSuccess {
-            continuation.resume(fileToCompile)
+    return suspendCancellableCoroutine { continuation ->
+        try {
+            taskManager.run(ProjectTaskContext(true).withUserData(HotSwapUIImpl.SKIP_HOT_SWAP_KEY, true), task)
+                .onSuccess {
+                    continuation.resume(listOf(fileToCompile))
+                }
+        } catch (e: Exception) {
+            logger<ComposePreviewToolWindowFactory>().warn(e)
+            continuation.resume(emptyList())
         }
     }
 }
