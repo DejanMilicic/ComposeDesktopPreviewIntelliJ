@@ -83,9 +83,9 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
         val coroutineScope = project.service<MyCoroutineScopeHolder>().coroutineScope
         coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             EditorSelectionAndTextChangesTracker.observeEditorContentChanges(project, toolWindow.disposable)
-                .debounce(3000L)
+                .debounce(1000L)
                 .distinctUntilChanged()
-                .collect { virtualFile ->
+                .collect { (_, virtualFile) ->
                     try {
                         val provider = compileCode(virtualFile, project) ?: return@collect
 

@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
 object EditorSelectionAndTextChangesTracker {
-    fun observeEditorContentChanges(project: Project, disposable: Disposable): Flow<VirtualFile> {
+    fun observeEditorContentChanges(project: Project, disposable: Disposable): Flow<Pair<String, VirtualFile>> {
         return callbackFlow {
             var currentEditor: Editor? = null
             var documentListener: DocumentListener? = null
@@ -40,7 +40,9 @@ object EditorSelectionAndTextChangesTracker {
                 // Create and add document listener
                 documentListener = object : DocumentListener {
                     override fun documentChanged(event: DocumentEvent) {
-                        trySend(file)
+                        val text = event.document.text
+                        println("DocumentChanged: $text")
+                        trySend(text to file)
                     }
                 }
                 currentEditor!!.document.addDocumentListener(documentListener!!)
@@ -53,7 +55,8 @@ object EditorSelectionAndTextChangesTracker {
                     val newEditor = (event.newEditor as? TextEditor)?.editor ?: return
 
                     if (newFile != null) {
-                        trySend(newFile)
+                        val text = newEditor!!.document.text
+                        trySend(text to newFile)
                         addListenersToCurrentEditor(newEditor, newFile)
                     } else {
                         // No active editor
@@ -73,7 +76,7 @@ object EditorSelectionAndTextChangesTracker {
 
             if (selectedEditor != null && selectedFile != null) {
 
-                trySend(selectedFile)
+                trySend("" to selectedFile)
                 addListenersToCurrentEditor(selectedEditor.editor, selectedFile)
             }
 
