@@ -24,6 +24,7 @@ import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.event.EditorFactoryEvent
 import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.OrderEnumerator
@@ -36,7 +37,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.time.debounce
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.jetbrains.jewel.bridge.LocalComponent
 import org.jetbrains.jewel.bridge.actionSystem.RootDataProviderModifier
 import org.jetbrains.jewel.bridge.theme.SwingBridgeTheme
@@ -48,7 +50,6 @@ import java.awt.Component
 import java.lang.reflect.Method
 import java.net.URLClassLoader
 import java.nio.file.Files
-import java.time.Duration
 import javax.swing.JPanel
 import kotlin.coroutines.resume
 import kotlin.io.path.Path
@@ -83,49 +84,51 @@ class ComposePreviewToolWindowFactory : ToolWindowFactory {
         val coroutineScope = project.service<MyCoroutineScopeHolder>().coroutineScope
         coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             watcher.observeEditorContentChanges(toolWindow.disposable)
-                .debounce(Duration.ofSeconds(5))
+                .debounce(3000L)
+                .distinctUntilChanged()
                 .collect { (_, virtualFile) ->
-                try {
-                    val compiledFun = compileCode(virtualFile, project) ?: return@collect
+                    try {
+                        val compiledFun = compileCode(virtualFile, project) ?: return@collect
 
-                    withContext(Dispatchers.EDT) {
-                        composePanel.setContent {
-                            SwingBridgeTheme {
-                                CompositionLocalProvider {
-                                    ComponentDataProviderBridge(wrapperPanel, content = {
-                                        compiledFun.invoke(null, currentComposer, currentCompositeKeyHash)
-                                    })
+                        withContext(Dispatchers.EDT) {
+                            composePanel.setContent {
+                                SwingBridgeTheme {
+                                    CompositionLocalProvider {
+                                        ComponentDataProviderBridge(wrapperPanel, content = {
+                                            compiledFun.invoke(null, currentComposer, currentCompositeKeyHash)
+                                        })
+                                    }
                                 }
                             }
                         }
+                    } catch (e: Exception) {
+                        thisLogger().error(e)
                     }
-                } catch (e: Exception) {
-                    thisLogger().error(e)
                 }
-            }
         }
     }
 }
 
+private data class ModulePaths(val module: Module, val paths: List<String>)
+
 private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): Method? {
-    val module = readAction {
+    val moduleData = readAction {
         val m = ModuleUtilCore.findModuleForFile(fileToCompile, project)
         m.takeIf { JavaLibraryUtil.hasLibraryClass(m, "androidx.compose.runtime.Composable") }
+            ?.let {
+                val paths = OrderEnumerator.orderEntries(it)
+                    .recursively().withoutSdk().pathsList.pathList
+                ModulePaths(it, paths)
+            }
     } ?: return null
 
     return withContext(Dispatchers.EDT) {
-        if (module.isDisposed) return@withContext null
+        if (moduleData.module.isDisposed) return@withContext null
         if (!fileToCompile.isValid) return@withContext null
 
         compileFiles(fileToCompile, project)
 
-        val allPaths = readAction {
-            ModuleUtilCore.findModuleForFile(fileToCompile, project)!!
-            OrderEnumerator.orderEntries(module)
-                .recursively().withoutSdk().pathsList.pathList
-        }
-
-        val diskPaths = allPaths
+        val diskPaths = moduleData.paths
             .mapNotNull { p -> Path(p).takeIf { Files.exists(it) }?.toUri()?.toURL() }
             .toTypedArray()
 
