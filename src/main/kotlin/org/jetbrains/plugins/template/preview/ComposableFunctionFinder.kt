@@ -34,19 +34,17 @@ class ComposableFunctionFinder(private val classLoader: ClassLoader) {
     /**
      * Main entry point - finds all valid preview functions in the given classes
      */
-    fun findPreviewFunctions(classNames: List<String>): List<ComposablePreviewFunction> {
+    fun findPreviewFunctions(clazzFqn: String): List<ComposablePreviewFunction> {
         val previewFunctions = mutableListOf<ComposablePreviewFunction>()
 
-        for (className in classNames) {
-            try {
-                val clazz = classLoader.loadClass(className)
-                val functions = findPreviewFunctionsInClass(clazz)
-                previewFunctions.addAll(functions)
-            } catch (e: ClassNotFoundException) {
-                logger.warn("Class not found: $className", e)
-            } catch (e: Exception) {
-                logger.error("Error processing class: $className", e)
-            }
+        try {
+            val clazz = classLoader.loadClass(clazzFqn)
+            val functions = findPreviewFunctionsInClass(clazz)
+            previewFunctions.addAll(functions)
+        } catch (e: ClassNotFoundException) {
+            logger.warn("Class not found: $clazzFqn", e)
+        } catch (e: Exception) {
+            logger.error("Error processing class: $clazzFqn", e)
         }
 
         return previewFunctions
