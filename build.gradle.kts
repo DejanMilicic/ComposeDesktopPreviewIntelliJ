@@ -47,28 +47,6 @@ dependencies {
     // It provides necessary Skiko runtime native binaries
     testImplementation(libs.skikoAwtRuntimeAll)
 
-
-//    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.20") {
-//        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jvm")
-//    }
-//    implementation("org.jetbrains.kotlin:kotlin-compiler-cli-for-ide:2.1.20") {
-//        exclude(group = "org.jetbrains.kotlin", module = "cli")
-//        exclude(group = "org.jetbrains.kotlin", module = "cli-js")
-//        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jvm")
-//    }
-//    implementation("org.jetbrains.kotlin:kotlin-script-runtime:2.1.20") {
-//        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
-//        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jvm")
-//    }
-
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
 
