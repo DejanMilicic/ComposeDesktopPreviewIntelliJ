@@ -137,7 +137,7 @@ private suspend fun compileCode(fileToCompile: VirtualFile, project: Project): M
             .mapNotNull { p -> Path(p).takeIf { Files.exists(it) }?.toUri()?.toURL() }
             .toTypedArray()
 
-        // todo dispose previously created loaders on refresh
+        // todo dispose of previously created loaders on refresh
         val pluginByClass = PluginManager.getPluginByClass(ComposePreviewToolWindowFactory::class.java)
         val parent = pluginByClass!!.classLoader
         val loader = URLClassLoader("ComposePreview", diskPaths, parent)
@@ -156,7 +156,11 @@ private suspend fun compileFiles(fileToCompile: VirtualFile, project: Project): 
         try {
             taskManager.run(ProjectTaskContext(true).withUserData(HotSwapUIImpl.SKIP_HOT_SWAP_KEY, true), task)
                 .onSuccess {
-                    continuation.resume(listOf(fileToCompile))
+                    if (it.hasErrors() || it.isAborted) {
+                        continuation.resume(emptyList())
+                    } else {
+                        continuation.resume(listOf(fileToCompile))
+                    }
                 }
         } catch (e: Exception) {
             logger<ComposePreviewToolWindowFactory>().warn(e)
